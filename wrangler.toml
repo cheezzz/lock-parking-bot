@@ -1,0 +1,13 @@
+name = "lock-parking-bot"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+[triggers]
+crons = ["0 6 * * *"]  # Daily at 06:00 UTC (08:00 SAST)
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lock-parking-db"
+database_id = "5bf4de75-9f59-41e2-9b86-6e6d16800e09"
+
+# TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set via `wrangler secret put`

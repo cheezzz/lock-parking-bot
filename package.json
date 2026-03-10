@@ -1,0 +1,17 @@
+{
+  "name": "lock-parking-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for managing a single lock parking spot via Cloudflare Workers + D1",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create lock-parking-db",
+    "db:init": "wrangler d1 execute lock-parking-db --file=schema.sql",
+    "db:init-local": "wrangler d1 execute lock-parking-db --local --file=schema.sql",
+    "webhook:set": "node scripts/set-webhook.js"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
