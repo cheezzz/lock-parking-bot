@@ -67,6 +67,19 @@ function parseDateRange(argsStr) {
   argsStr = argsStr.trim();
   if (!argsStr) return null;
 
+  // Dash shorthand: "1-2 July", "1-2 July 2026"
+  const dashMatch = argsStr.match(/^(\d{1,2})-(\d{1,2})\s+([a-zA-Z]+)(?:\s+(\d{4}))?\s*(.*)$/);
+  if (dashMatch) {
+    const [, day1, day2, month, year, rest] = dashMatch;
+    const dateStr1 = year ? `${day1} ${month} ${year}` : `${day1} ${month}`;
+    const dateStr2 = year ? `${day2} ${month} ${year}` : `${day2} ${month}`;
+    const d1 = parseDate(dateStr1);
+    const d2 = parseDate(dateStr2);
+    if (d1 && d2) {
+      return { checkin: d1, checkout: d2, remainder: rest.trim() };
+    }
+  }
+
   // Try ISO pair first: "2026-07-05 2026-07-08 ..."
   const isoMatch = argsStr.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{4}-\d{2}-\d{2})(.*)$/);
   if (isoMatch) {
@@ -350,12 +363,15 @@ async function handleCallbackQuery(db, token, callback) {
 function handleHelp(token, chatId) {
   const msg = `🅿️ <b>Lock Parking Bot</b>\n\n` +
     `<b>Commands:</b>\n` +
-    `<code>/parkcheck 5 July 8 July</code>\nCheck if parking is available\n\n` +
-    `<code>/parkbook 5 July 8 July Guest Name</code>\nBook parking for a guest\n\n` +
+    `<code>/parkcheck 1-3 July</code>\nCheck if parking is available\n\n` +
+    `<code>/parkbook 1-3 July Guest Name</code>\nBook parking for a guest\n\n` +
     `<code>/parkunbook</code>\nRemove a parking booking\n\n` +
     `<code>/parkstatus</code>\nToday's parking status\n\n` +
     `<code>/parkall</code>\nList all upcoming bookings\n\n` +
-    `<b>Date formats:</b> <code>5 July</code>, <code>5 July 2026</code>, or <code>2026-07-05</code>\n\n` +
+    `<b>Date formats:</b>\n` +
+    `<code>1-3 July</code> — same month\n` +
+    `<code>30 June 1 July</code> — cross-month\n` +
+    `<code>31 December 2026 1 January 2027</code> — cross-year\n\n` +
     `💡 Checkout day = available for new guest (e.g. booking 1-3 July means spot is free on 3 July)`;
   return sendMessage(token, chatId, msg);
 }

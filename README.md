@@ -13,14 +13,19 @@ Telegram bot for managing a single lock parking spot across multiple guesthouse 
 
 | Command | Description |
 |---------|-------------|
-| `/parkcheck 5 July 8 July` | Check availability for dates |
-| `/parkbook 5 July 8 July Jan van Niekerk` | Book parking for a guest |
+| `/parkcheck 1-3 July` | Check availability for dates |
+| `/parkbook 1-3 July Jan van Niekerk` | Book parking for a guest |
 | `/parkunbook` | List bookings with remove buttons |
 | `/parkstatus` | Today's parking status |
 | `/parkall` | All upcoming bookings |
 | `/help` | Show command reference |
 
-**Date formats supported:** `5 July`, `5 July 2026`, `2026-07-05`
+**Date formats supported:**
+- `1-3 July` — same month shorthand
+- `30 June 1 July` — cross-month
+- `31 December 2026 1 January 2027` — cross-year (include year on both)
+- `5 July 8 July` — original format still works
+- `2026-07-05 2026-07-08` — ISO format
 
 ## Setup
 
