@@ -185,6 +185,18 @@ async function getTodayBooking(db) {
 }
 
 // ============================================================
+// REPLY KEYBOARD
+// ============================================================
+
+const REPLY_KEYBOARD = {
+  keyboard: [
+    [{ text: '📊 Status' }, { text: '📋 All Bookings' }, { text: '🗑️ Unbook' }],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+};
+
+// ============================================================
 // TELEGRAM API
 // ============================================================
 
@@ -202,8 +214,8 @@ async function sendMessage(token, chatId, text, replyMarkup = null) {
     chat_id: chatId,
     text,
     parse_mode: 'HTML',
+    reply_markup: replyMarkup || REPLY_KEYBOARD,
   };
-  if (replyMarkup) body.reply_markup = replyMarkup;
   return sendTelegram(token, 'sendMessage', body);
 }
 
@@ -363,16 +375,17 @@ async function handleCallbackQuery(db, token, callback) {
 function handleHelp(token, chatId) {
   const msg = `🅿️ <b>Lock Parking Bot</b>\n\n` +
     `<b>Commands:</b>\n` +
-    `<code>/parkcheck 1-3 July</code>\nCheck if parking is available\n\n` +
-    `<code>/parkbook 1-3 July Guest Name</code>\nBook parking for a guest\n\n` +
-    `<code>/parkunbook</code>\nRemove a parking booking\n\n` +
-    `<code>/parkstatus</code>\nToday's parking status\n\n` +
-    `<code>/parkall</code>\nList all upcoming bookings\n\n` +
+    `<code>/parkcheck 1-3 July</code> (or <code>/pc</code>)\nCheck if parking is available\n\n` +
+    `<code>/parkbook 1-3 July Guest Name</code> (or <code>/pb</code>)\nBook parking for a guest\n\n` +
+    `<code>/parkunbook</code> (or <code>/pu</code>)\nRemove a parking booking\n\n` +
+    `<code>/parkstatus</code> (or <code>/ps</code>)\nToday's parking status\n\n` +
+    `<code>/parkall</code> (or <code>/pa</code>)\nList all upcoming bookings\n\n` +
     `<b>Date formats:</b>\n` +
     `<code>1-3 July</code> — same month\n` +
     `<code>30 June 1 July</code> — cross-month\n` +
     `<code>31 December 2026 1 January 2027</code> — cross-year\n\n` +
-    `💡 Checkout day = available for new guest (e.g. booking 1-3 July means spot is free on 3 July)`;
+    `💡 Checkout day = available for new guest (e.g. booking 1-3 July means spot is free on 3 July)\n\n` +
+    `💡 Use the keyboard buttons below for quick access to status, bookings, and unbook.`;
   return sendMessage(token, chatId, msg);
 }
 
@@ -453,18 +466,23 @@ export default {
         const argsStr = spaceIdx > -1 ? text.slice(spaceIdx + 1) : '';
 
         switch (command) {
+          case '/pc':
           case '/parkcheck':
             await handleParkCheck(db, token, chatId, argsStr);
             break;
+          case '/pb':
           case '/parkbook':
             await handleParkBook(db, token, chatId, argsStr);
             break;
+          case '/pu':
           case '/parkunbook':
             await handleParkUnbook(db, token, chatId);
             break;
+          case '/ps':
           case '/parkstatus':
             await handleParkStatus(db, token, chatId);
             break;
+          case '/pa':
           case '/parkall':
             await handleParkAll(db, token, chatId);
             break;
@@ -474,7 +492,14 @@ export default {
             await handleHelp(token, chatId);
             break;
           default:
-            // Ignore unknown commands
+            // Handle reply keyboard button taps
+            if (text === '📊 Status') {
+              await handleParkStatus(db, token, chatId);
+            } else if (text === '📋 All Bookings') {
+              await handleParkAll(db, token, chatId);
+            } else if (text === '🗑️ Unbook') {
+              await handleParkUnbook(db, token, chatId);
+            }
             break;
         }
       } catch (err) {
