@@ -390,6 +390,160 @@ function handleHelp(token, chatId) {
 }
 
 // ============================================================
+// ICAL FETCHING & PARSING
+// ============================================================
+
+const UNIT_LABELS = {
+  COTTAGE: 'Cottage',
+  TINYHOME: 'Tiny Home',
+  GLAMPING: 'Glamping',
+};
+
+const PLATFORM_LABELS = {
+  LEKKESLAAP: 'LekkeSlaap',
+  GOOGLE: 'Google Calendar',
+  AIRBNB: 'Airbnb',
+};
+
+/**
+ * Collect iCal feeds from known env vars.
+ * Returns [{ unit, platform, url }]
+ */
+function getIcalFeeds(env) {
+  const FEED_KEYS = [
+    ['ICAL_COTTAGE_LEKKESLAAP', 'COTTAGE', 'LEKKESLAAP'],
+    ['ICAL_COTTAGE_GOOGLE', 'COTTAGE', 'GOOGLE'],
+    ['ICAL_COTTAGE_AIRBNB', 'COTTAGE', 'AIRBNB'],
+    ['ICAL_TINYHOME_LEKKESLAAP', 'TINYHOME', 'LEKKESLAAP'],
+    ['ICAL_TINYHOME_GOOGLE', 'TINYHOME', 'GOOGLE'],
+    ['ICAL_TINYHOME_AIRBNB', 'TINYHOME', 'AIRBNB'],
+    ['ICAL_GLAMPING_LEKKESLAAP', 'GLAMPING', 'LEKKESLAAP'],
+    ['ICAL_GLAMPING_GOOGLE', 'GLAMPING', 'GOOGLE'],
+    ['ICAL_GLAMPING_AIRBNB', 'GLAMPING', 'AIRBNB'],
+  ];
+
+  const feeds = [];
+  for (const [key, unitKey, platformKey] of FEED_KEYS) {
+    if (env[key]) {
+      feeds.push({
+        unit: UNIT_LABELS[unitKey],
+        platform: PLATFORM_LABELS[platformKey],
+        url: env[key],
+      });
+    }
+  }
+  return feeds;
+}
+
+/**
+ * Unfold iCal lines (continuation lines start with a space or tab).
+ */
+function unfoldIcal(text) {
+  return text.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
+}
+
+/**
+ * Parse VEVENT blocks from iCal text.
+ * Returns [{ startDate, endDate, summary }] with dates as YYYY-MM-DD.
+ */
+function parseIcalEvents(icalText) {
+  const unfolded = unfoldIcal(icalText);
+  const events = [];
+  const blocks = unfolded.split('BEGIN:VEVENT');
+
+  for (const block of blocks.slice(1)) {
+    const end = block.indexOf('END:VEVENT');
+    if (end === -1) continue;
+    const content = block.slice(0, end);
+
+    const dtstartMatch = content.match(/DTSTART[^:]*:(\d{8})/);
+    const dtendMatch = content.match(/DTEND[^:]*:(\d{8})/);
+    const summaryMatch = content.match(/SUMMARY:(.*)/);
+
+    if (dtstartMatch) {
+      const ds = dtstartMatch[1];
+      const startDate = `${ds.slice(0,4)}-${ds.slice(4,6)}-${ds.slice(6,8)}`;
+      let endDate = null;
+      if (dtendMatch) {
+        const de = dtendMatch[1];
+        endDate = `${de.slice(0,4)}-${de.slice(4,6)}-${de.slice(6,8)}`;
+      }
+      const summary = summaryMatch ? summaryMatch[1].trim() : 'Unknown';
+      events.push({ startDate, endDate, summary });
+    }
+  }
+  return events;
+}
+
+/**
+ * Check if an iCal event should be skipped (e.g. Airbnb blocked dates).
+ */
+function shouldSkipEvent(summary) {
+  return /not available/i.test(summary);
+}
+
+/**
+ * Extract a guest name from an iCal SUMMARY.
+ * LekkeSlaap format: "Reference: LS-XXX - Customer: John Smith - ..."
+ * Airbnb: "Reserved"
+ * Falls back to the full summary (truncated).
+ */
+function extractGuestName(summary) {
+  // LekkeSlaap: look for "Customer: Name"
+  const customerMatch = summary.match(/Customer:\s*([^-\n]+)/i);
+  if (customerMatch) return customerMatch[1].trim();
+
+  // Generic: return summary, truncated
+  return summary.length > 30 ? summary.slice(0, 30) + '…' : summary;
+}
+
+/**
+ * Fetch all iCal feeds and return today's bookings grouped by unit.
+ * Returns { unitName: [{ platform, guestName }] }
+ */
+async function fetchTodayBookings(env) {
+  const feeds = getIcalFeeds(env);
+  if (feeds.length === 0) return {};
+
+  const today = todayISO();
+  const results = {};
+
+  // Initialize all units
+  for (const feed of feeds) {
+    if (!results[feed.unit]) results[feed.unit] = [];
+  }
+
+  const fetches = feeds.map(async (feed) => {
+    try {
+      const resp = await fetch(feed.url, {
+        headers: { 'User-Agent': 'LockParkingBot/1.0' },
+      });
+      if (!resp.ok) return;
+      const text = await resp.text();
+      const events = parseIcalEvents(text);
+
+      for (const event of events) {
+        if (shouldSkipEvent(event.summary)) continue;
+        // Active today: startDate <= today < endDate
+        const isActive = event.startDate <= today &&
+          (event.endDate ? event.endDate > today : event.startDate === today);
+        if (isActive) {
+          results[feed.unit].push({
+            platform: feed.platform,
+            guestName: extractGuestName(event.summary),
+          });
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to fetch iCal for ${feed.unit}/${feed.platform}:`, err.message);
+    }
+  });
+
+  await Promise.all(fetches);
+  return results;
+}
+
+// ============================================================
 // CRON: DAILY REMINDER
 // ============================================================
 
@@ -403,30 +557,39 @@ async function handleCron(env) {
   const today = todayISO();
   const active = await getTodayBooking(db);
 
+  // Parking status
   let msg;
   if (active.length > 0) {
     const b = active[0];
-    msg = `🅿️ <b>Daily parking update</b>\n\n` +
-      `🔒 BOOKED — ${b.guest_name}\n📅 Checks out ${formatDate(b.checkout)}`;
+    msg = `🅿️ <b>Parking:</b> Booked — ${b.guest_name} (out ${formatDate(b.checkout)})`;
   } else {
-    msg = `🅿️ <b>Daily parking update</b>\n\n✅ Lock parking is AVAILABLE today`;
+    msg = `🅿️ <b>Parking:</b> Available`;
   }
 
-  // Check if someone is arriving today
-  const arrivals = await db.prepare(
-    `SELECT * FROM parking_bookings WHERE checkin = ?`
-  ).bind(today).all();
+  // Today's bookings from iCal feeds
+  const bookings = await fetchTodayBookings(env);
+  const units = Object.keys(bookings);
 
-  if (arrivals.results.length > 0) {
-    const a = arrivals.results[0];
-    msg += `\n\n📥 Arriving today: ${a.guest_name}`;
-  }
-
-  // Next upcoming
-  const future = await getFutureBookings(db);
-  const nextBooking = future.find(b => b.checkin > today);
-  if (nextBooking) {
-    msg += `\n📋 Next booking: ${nextBooking.guest_name} — ${formatDate(nextBooking.checkin)}`;
+  if (units.length > 0) {
+    msg += `\n\n📋 <b>Today's Bookings:</b>`;
+    for (const unit of units) {
+      const unitBookings = bookings[unit];
+      if (unitBookings.length > 0) {
+        // Deduplicate by guest name (same guest may appear in multiple calendars)
+        const seen = new Set();
+        const unique = unitBookings.filter(b => {
+          const key = b.guestName.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        for (const b of unique) {
+          msg += `\n• ${unit}: ${b.guestName} (${b.platform})`;
+        }
+      } else {
+        msg += `\n• ${unit}: No booking`;
+      }
+    }
   }
 
   await sendMessage(token, chatId, msg);
