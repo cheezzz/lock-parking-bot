@@ -489,8 +489,8 @@ function shouldSkipEvent(summary) {
  * Falls back to the full summary (truncated).
  */
 function extractGuestName(summary) {
-  // LekkeSlaap: look for "Customer: Name"
-  const customerMatch = summary.match(/Customer:\s*([^-\n]+)/i);
+  // LekkeSlaap: look for "Customer: Name" (literal \n separators in iCal)
+  const customerMatch = summary.match(/Customer:\s*(.+?)\\n/i);
   if (customerMatch) return customerMatch[1].trim();
 
   // Generic: return summary, truncated
